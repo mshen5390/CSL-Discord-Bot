@@ -36,7 +36,7 @@ async def cleanup_threads():
                     thread_date = datetime(year, month, day)
 
                     if datetime.now() > thread_date:
-                        await thread.send("This coverage shift has passed. Closing thread...")
+                        await thread.send("This coverage shift has passed. Closing thread...", silent=True)
                         await thread.delete()
                 except Exception as e:
                     print(f"Skipping thread '{thread.name}': {e}")
@@ -66,17 +66,16 @@ async def coverage(ctx, day: str, date: str, time: str, *, location: str):
         name=thread_name,
         type=discord.ChannelType.public_thread
     )
-    await thread.send(f"{ctx.author.mention} has created a coverage thread: **{thread_name}**")
 
 # Command to resolve a thread (close it)
 @bot.command()
 async def resolve(ctx):
     if isinstance(ctx.channel, discord.Thread):
-        await ctx.send("Thread resolved! Closing...")
+        await ctx.send("Thread resolved! Closing...", silent=True)
         await ctx.channel.delete()
     else:
         await ctx.send("This command can only be used inside a thread.")
-        
+
 # Command to clear the channel (for testing purposes)
 @bot.command()
 async def clear(ctx):
