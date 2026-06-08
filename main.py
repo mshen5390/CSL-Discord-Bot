@@ -1,7 +1,8 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import logging
 from dotenv import load_dotenv
+from datetime import datetime
 import os
 
 load_dotenv()
@@ -19,38 +20,72 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 @bot.event
 async def on_ready():
     print(f'{bot.user.name} has connected to Discord!')
+    cleanup_threads.start()
 
-@bot.event
-async def on_member_join(member):
-    await member.send(f'Welcome to the server, {member.name}!')
+@tasks.loop(hours=2)
+async def cleanup_threads():
+    for guild in bot.guilds:
+        for channel in guild.text_channels:
+            for thread in channel.threads:
+                try:
+                    parts = thread.name.split(" ")
+                    date_str = parts[1]
+                    month, day = map(int, date_str.split("/"))
+                    year = datetime.now().year
+                    thread_date = datetime(year, month, day)
 
-@bot.event
-async def on_message(message):
-    if message.author == bot.user:
+                    if datetime.now() > thread_date:
+                        await thread.send("This coverage shift has passed. Closing thread...")
+                        await thread.delete()
+                except Exception as e:
+                    print(f"Skipping thread '{thread.name}': {e}")
+
+@cleanup_threads.before_loop
+async def before_cleanup():
+    await bot.wait_until_ready()
+
+
+
+
+@bot.command()
+async def coverage(ctx, day: str, date: str, time: str, *, location: str):
+    if day.lower() not in ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]:
+        await ctx.send("Invalid day. Please use a valid weekday (e.g., Monday, Tuesday).")
         return
+    elif date.count("/") != 1:
+        await ctx.send("Invalid date format. Please use MM/DD format (e.g., 09/15).")
+        return
+    # elif time.count(":") != 1:
+    #     await ctx.send("Invalid time format. Please use HH:MM format (e.g., 14:30).")
+    #     return
+    elif location.lower() not in ["csl", "hackerspace"]:
+        await ctx.send("Invalid location. Please specify either 'CSL' or 'Hackerspace'.")
+        return
+    
 
-    await bot.process_commands(message)
+    thread_name = f"{day} {date} {time} in {location}"
+    thread = await ctx.channel.create_thread(
+        name=thread_name,
+        type=discord.ChannelType.public_thread
+    )
+    await thread.send(f"{ctx.author.mention} has created a coverage thread: **{thread_name}**")
 
 @bot.command()
-async def hello(ctx):
-    await ctx.send(f"hello {ctx.author.mention}")
-
-@bot.command()
-async def assign(ctx):
-    role = discord.utils.get(ctx.guild.roles, name=secret_role)
-    if role:
-        await ctx.author.add_roles(role)
-        await ctx.send(f"{ctx.author.mention} has been assigned the {secret_role} role!")
+async def resolve(ctx):
+    if isinstance(ctx.channel, discord.Thread):
+        await ctx.send("Thread resolved! Closing...")
+        await ctx.channel.delete()
     else:
-        await ctx.send(f"Role '{secret_role}' not found.")
+        await ctx.send("This command can only be used inside a thread.")
 
 @bot.command()
-async def remove(ctx):
-    role = discord.utils.get(ctx.guild.roles, name=secret_role)
-    if role:
-        await ctx.author.remove_roles(role)
-        await ctx.send(f"{ctx.author.mention} has been removed from the {secret_role} role!")
-    else:
-        await ctx.send(f"Role '{secret_role}' not found.")
+async def clear(ctx):
+    await ctx.channel.purge(limit=100)
+
+@bot.command()
+async def test_cleanup(ctx):
+    await cleanup_threads()
+    await ctx.send("Cleanup ran!")
+
 bot.run(token, log_handler=handler, log_level=logging.DEBUG)
 
